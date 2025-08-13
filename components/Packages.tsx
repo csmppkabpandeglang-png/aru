@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Package, AddOn, Project, PhysicalItem } from '../types';
+import { packageService, addOnService } from '../services/database';
 import PageHeader from './PageHeader';
 import { PencilIcon, Trash2Icon, PlusIcon } from '../constants';
 
@@ -101,7 +102,14 @@ const Packages: React.FC<PackagesProps> = ({ packages, setPackages, addOns, setA
     }
 
     if (window.confirm("Apakah Anda yakin ingin menghapus paket ini?")) {
-        setPackages(prev => prev.filter(p => p.id !== pkgId));
+        packageService.delete(pkgId)
+            .then(() => {
+                setPackages(prev => prev.filter(p => p.id !== pkgId));
+            })
+            .catch(error => {
+                console.error('Error deleting package:', error);
+                alert('Gagal menghapus paket.');
+            });
     }
   }
 
@@ -125,10 +133,23 @@ const Packages: React.FC<PackagesProps> = ({ packages, setPackages, addOns, setA
     };
     
     if (packageEditMode) {
-        setPackages(prev => prev.map(p => p.id === packageEditMode ? { ...p, ...packageData } : p));
+        packageService.update(packageEditMode, packageData)
+            .then(updatedPackage => {
+                setPackages(prev => prev.map(p => p.id === packageEditMode ? updatedPackage : p));
+            })
+            .catch(error => {
+                console.error('Error updating package:', error);
+                alert('Gagal memperbarui paket.');
+            });
     } else {
-        const newPackage: Package = { ...packageData, id: `PKG${Date.now()}` };
-        setPackages(prev => [...prev, newPackage]);
+        packageService.create(packageData)
+            .then(newPackage => {
+                setPackages(prev => [...prev, newPackage]);
+            })
+            .catch(error => {
+                console.error('Error creating package:', error);
+                alert('Gagal menambahkan paket.');
+            });
     }
 
     handlePackageCancelEdit();
@@ -161,7 +182,14 @@ const Packages: React.FC<PackagesProps> = ({ packages, setPackages, addOns, setA
     }
 
     if (window.confirm("Apakah Anda yakin ingin menghapus add-on ini?")) {
-        setAddOns(prev => prev.filter(a => a.id !== addOnId));
+        addOnService.delete(addOnId)
+            .then(() => {
+                setAddOns(prev => prev.filter(a => a.id !== addOnId));
+            })
+            .catch(error => {
+                console.error('Error deleting add-on:', error);
+                alert('Gagal menghapus add-on.');
+            });
     }
   }
 
@@ -178,10 +206,23 @@ const Packages: React.FC<PackagesProps> = ({ packages, setPackages, addOns, setA
     };
     
     if (addOnEditMode) {
-        setAddOns(prev => prev.map(a => a.id === addOnEditMode ? { ...a, ...addOnData } : a));
+        addOnService.update(addOnEditMode, addOnData)
+            .then(updatedAddOn => {
+                setAddOns(prev => prev.map(a => a.id === addOnEditMode ? updatedAddOn : a));
+            })
+            .catch(error => {
+                console.error('Error updating add-on:', error);
+                alert('Gagal memperbarui add-on.');
+            });
     } else {
-        const newAddOn: AddOn = { ...addOnData, id: `ADD${Date.now()}` };
-        setAddOns(prev => [...prev, newAddOn]);
+        addOnService.create(addOnData)
+            .then(newAddOn => {
+                setAddOns(prev => [...prev, newAddOn]);
+            })
+            .catch(error => {
+                console.error('Error creating add-on:', error);
+                alert('Gagal menambahkan add-on.');
+            });
     }
 
     handleAddOnCancelEdit();

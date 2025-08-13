@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Asset, AssetStatus, Profile } from '../types';
+import { assetService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import StatCard from './StatCard';
@@ -87,17 +88,27 @@ const Assets: React.FC<AssetsProps> = ({ assets, setAssets, profile, showNotific
         e.preventDefault();
         
         if (modalMode === 'add') {
-            const newAsset: Asset = {
-                id: `ASSET${Date.now()}`,
-                ...formData
-            };
-            setAssets(prev => [newAsset, ...prev].sort((a,b) => a.name.localeCompare(b.name)));
-            showNotification(`Aset "${newAsset.name}" berhasil ditambahkan.`);
+            assetService.create(formData)
+                .then(newAsset => {
+                    setAssets(prev => [newAsset, ...prev].sort((a,b) => a.name.localeCompare(b.name)));
+                    showNotification(`Aset "${newAsset.name}" berhasil ditambahkan.`);
+                })
+                .catch(error => {
+                    console.error('Error creating asset:', error);
+                    showNotification('Gagal menambahkan aset.');
+                });
         } else if (modalMode === 'edit' && selectedAsset) {
-            setAssets(prev => prev.map(a => 
-                a.id === selectedAsset.id ? { ...a, ...formData } : a
-            ).sort((a,b) => a.name.localeCompare(b.name)));
-            showNotification(`Aset "${formData.name}" berhasil diperbarui.`);
+            assetService.update(selectedAsset.id, formData)
+                .then(updatedAsset => {
+                    setAssets(prev => prev.map(a => 
+                        a.id === selectedAsset.id ? updatedAsset : a
+                    ).sort((a,b) => a.name.localeCompare(b.name)));
+                    showNotification(`Aset "${formData.name}" berhasil diperbarui.`);
+                })
+                .catch(error => {
+                    console.error('Error updating asset:', error);
+                    showNotification('Gagal memperbarui aset.');
+                });
         }
         
         handleCloseModal();
@@ -106,8 +117,15 @@ const Assets: React.FC<AssetsProps> = ({ assets, setAssets, profile, showNotific
     const handleDelete = (assetId: string) => {
         const assetName = assets.find(a => a.id === assetId)?.name;
         if (window.confirm(`Apakah Anda yakin ingin menghapus aset "${assetName}"?`)) {
-            setAssets(prev => prev.filter(a => a.id !== assetId));
-            showNotification(`Aset "${assetName}" telah dihapus.`);
+            assetService.delete(assetId)
+                .then(() => {
+                    setAssets(prev => prev.filter(a => a.id !== assetId));
+                    showNotification(`Aset "${assetName}" telah dihapus.`);
+                })
+                .catch(error => {
+                    console.error('Error deleting asset:', error);
+                    showNotification('Gagal menghapus aset.');
+                });
         }
     };
 

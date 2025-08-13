@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Lead, LeadStatus, Client, ClientStatus, Project, Package, AddOn, Transaction, TransactionType, PaymentStatus, Profile, Card, FinancialPocket, ContactChannel, PromoCode, ClientType } from '../types';
+import { leadService, clientService, projectService, transactionService, cardService, financialPocketService, promoCodeService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import { PlusIcon, PencilIcon, Trash2Icon, Share2Icon, DownloadIcon, SendIcon, UsersIcon, TargetIcon, TrendingUpIcon, CalendarIcon, MapPinIcon } from '../constants';
@@ -104,21 +105,28 @@ const QuickLeadForm: React.FC<{
         const notes = `Hai! Terimakasih telah menghubungi #venapictures\nPerkenalkan aku Nina! (๑•ᴗ•๑)♡\nUntuk informasi mengenai pricelist dan availability, mohon mengisi data berikut ya!\nNama : ${name}\nJenis Acara : ${eventType}\nTanggal Acara : ${eventDate ? new Date(eventDate).toLocaleDateString('id-ID') : ''}\nLokasi Acara : ${eventLocation}\nChat kamu akan di balas secepatnya! Terimakasih`;
 
         const newLead: Lead = {
-            id: `LEAD-QUICK-${Date.now()}`,
             name: name,
             contactChannel: ContactChannel.WHATSAPP,
             location: eventLocation,
             status: LeadStatus.DISCUSSION,
             date: new Date().toISOString().split('T')[0],
             notes: notes
-        };
-        setLeads(prev => [newLead, ...prev]);
-        showNotification(`Prospek baru "${name}" ditambahkan ke kolom Sedang Diskusi.`);
+        } as any;
         
-        setName('');
-        setEventType(userProfile.projectTypes[0] || '');
-        setEventDate('');
-        setEventLocation('');
+        leadService.create(newLead)
+            .then(createdLead => {
+                setLeads(prev => [createdLead, ...prev]);
+                showNotification(`Prospek baru "${name}" ditambahkan ke kolom Sedang Diskusi.`);
+                
+                setName('');
+                setEventType(userProfile.projectTypes[0] || '');
+                setEventDate('');
+                setEventLocation('');
+            })
+            .catch(error => {
+                console.error('Error creating quick lead:', error);
+                alert('Gagal menambahkan prospek.');
+            });
     };
 
     return (
@@ -248,9 +256,15 @@ const Leads: React.FC<LeadsProps> = ({
     };
 
     const handleMoveToFollowUp = (leadId: string) => {
-        setLeads(prev => prev.map(l => 
-            l.id === leadId ? { ...l, status: LeadStatus.FOLLOW_UP } : l
-        ));
+        setLeads(prev => prev.map(l => {
+            if (l.id === leadId) {
+                const updatedLead = { ...l, status: LeadStatus.FOLLOW_UP };
+                // Update in database
+                leadService.update(leadId, { status: LeadStatus.FOLLOW_UP }).catch(console.error);
+                return updatedLead;
+            }
+            return l;
+        }));
         showNotification('Prospek dipindahkan ke "Menunggu Follow Up".');
     };
 
@@ -307,7 +321,15 @@ const Leads: React.FC<LeadsProps> = ({
                 setLeadToConvert(lead);
                 setConversionForm(prev => ({...prev, projectName: `Proyek ${lead.name}`, location: lead.location, projectType: userProfile.projectTypes[0]}));
             } else {
-                setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
+                setLeads(prev => prev.map(l => {
+                    if (l.id === leadId) {
+                        const updatedLead = { ...l, status: newStatus };
+                        // Update in database
+                        leadService.update(leadId, { status: newStatus }).catch(console.error);
+                        return updatedLead;
+                    }
+                    return l;
+                }));
             }
         }
         setDraggedLeadId(null);
@@ -345,14 +367,13 @@ const Leads: React.FC<LeadsProps> = ({
         const totalProject = totalBeforeDiscount - finalDiscountAmount;
         const remainingPayment = totalProject - conversionForm.dp;
 
-        const newClientId = `CLI${Date.now()}`;
         const newClient: Client = {
-            id: newClientId, name: leadToConvert.name, email: conversionForm.email, phone: conversionForm.phone,
+            name: leadToConvert.name, email: conversionForm.email, phone: conversionForm.phone,
             instagram: conversionForm.instagram, since: new Date().toISOString().split('T')[0], status: ClientStatus.ACTIVE,
             clientType: ClientType.DIRECT,
             lastContact: new Date().toISOString(),
             portalAccessId: crypto.randomUUID(),
-        };
+        } as any;
 
         const physicalItemsFromPackage = selectedPackage.physicalItems.map((item, index) => ({
             id: `pi-${Date.now()}-${index}`,
@@ -364,42 +385,103 @@ const Leads: React.FC<LeadsProps> = ({
 
         const printingCostFromPackage = physicalItemsFromPackage.reduce((sum, item) => sum + item.cost, 0);
 
-        const newProject: Project = {
-            id: `PRJ${Date.now()}`, projectName: conversionForm.projectName, clientName: newClient.name, clientId: newClient.id,
-            projectType: conversionForm.projectType, packageName: selectedPackage.name, packageId: selectedPackage.id,
-            addOns: selectedAddOns, date: conversionForm.date, location: conversionForm.location, progress: 0,
-            status: 'Dikonfirmasi', totalCost: totalProject, amountPaid: conversionForm.dp,
-            paymentStatus: conversionForm.dp > 0 ? (remainingPayment <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
-            team: [], notes: conversionForm.notes,
-            promoCodeId: conversionForm.promoCodeId || undefined,
-            discountAmount: finalDiscountAmount > 0 ? finalDiscountAmount : undefined,
-            printingDetails: physicalItemsFromPackage,
-            printingCost: printingCostFromPackage,
-            completedDigitalItems: [],
-        };
-
-        setClients(prev => [newClient, ...prev]);
-        setProjects(prev => [newProject, ...prev]);
-        setLeads(prev => prev.map(l => l.id === leadToConvert.id ? { ...l, status: LeadStatus.CONVERTED } : l));
-
-        if (newProject.amountPaid > 0) {
-            const newTransaction: Transaction = {
-                id: `TRN-DP-${newProject.id}`, date: new Date().toISOString().split('T')[0], description: `DP Proyek ${newProject.projectName}`,
-                amount: newProject.amountPaid, type: TransactionType.INCOME, projectId: newProject.id, category: 'DP Proyek',
-                method: 'Transfer Bank', pocketId: 'POC005', cardId: conversionForm.dpDestinationCardId,
-            };
-            setTransactions(prev => [...prev, newTransaction].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setCards(prev => prev.map(c => c.id === conversionForm.dpDestinationCardId ? { ...c, balance: c.balance + newProject.amountPaid } : c));
-            setPockets(prev => prev.map(p => p.id === 'POC005' ? { ...p, amount: p.amount + newProject.amountPaid } : p));
-        }
-
-        if (promoCode) {
-            setPromoCodes(prev => prev.map(p => p.id === promoCode.id ? { ...p, usageCount: p.usageCount + 1 } : p));
-        }
+        // Create client first
+        clientService.create(newClient)
+            .then(createdClient => {
+                setClients(prev => [createdClient, ...prev]);
+                
+                // Then create project
+                const newProject: Omit<Project, 'id'> = {
+                    projectName: conversionForm.projectName, 
+                    clientName: createdClient.name, 
+                    clientId: createdClient.id,
+                    projectType: conversionForm.projectType, 
+                    packageName: selectedPackage.name, 
+                    packageId: selectedPackage.id,
+                    addOns: selectedAddOns, 
+                    date: conversionForm.date, 
+                    location: conversionForm.location, 
+                    progress: 0,
+                    status: 'Dikonfirmasi', 
+                    totalCost: totalProject, 
+                    amountPaid: conversionForm.dp,
+                    paymentStatus: conversionForm.dp > 0 ? (remainingPayment <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
+                    team: [], 
+                    notes: conversionForm.notes,
+                    promoCodeId: conversionForm.promoCodeId || undefined,
+                    discountAmount: finalDiscountAmount > 0 ? finalDiscountAmount : undefined,
+                    printingDetails: physicalItemsFromPackage,
+                    printingCost: printingCostFromPackage,
+                    completedDigitalItems: [],
+                };
+                
+                return projectService.create(newProject);
+            })
+            .then(createdProject => {
+                setProjects(prev => [createdProject, ...prev]);
+                
+                // Update lead status
+                return leadService.update(leadToConvert.id, { status: LeadStatus.CONVERTED });
+            })
+            .then(updatedLead => {
+                setLeads(prev => prev.map(l => l.id === leadToConvert.id ? updatedLead : l));
+                
+                // Handle DP transaction if any
+                if (conversionForm.dp > 0) {
+                    const newTransaction: Omit<Transaction, 'id'> = {
+                        date: new Date().toISOString().split('T')[0], 
+                        description: `DP Proyek ${conversionForm.projectName}`,
+                        amount: conversionForm.dp, 
+                        type: TransactionType.INCOME, 
+                        projectId: createdProject.id, 
+                        category: 'DP Proyek',
+                        method: 'Transfer Bank', 
+                        pocketId: 'POC005', 
+                        cardId: conversionForm.dpDestinationCardId,
+                    };
+                    
+                    return Promise.all([
+                        transactionService.create(newTransaction),
+                        cardService.update(conversionForm.dpDestinationCardId, { 
+                            balance: cards.find(c => c.id === conversionForm.dpDestinationCardId)!.balance + conversionForm.dp 
+                        }),
+                        financialPocketService.update('POC005', { 
+                            amount: pockets.find(p => p.id === 'POC005')!.amount + conversionForm.dp 
+                        })
+                    ]);
+                }
+                return Promise.resolve([]);
+            })
+            .then(([transaction, updatedCard, updatedPocket]) => {
+                if (transaction) {
+                    setTransactions(prev => [...prev, transaction].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+                }
+                if (updatedCard) {
+                    setCards(prev => prev.map(c => c.id === conversionForm.dpDestinationCardId ? updatedCard : c));
+                }
+                if (updatedPocket) {
+                    setPockets(prev => prev.map(p => p.id === 'POC005' ? updatedPocket : p));
+                }
+                
+                // Update promo code usage
+                if (promoCode) {
+                    return promoCodeService.update(promoCode.id, { usageCount: promoCode.usageCount + 1 });
+                }
+                return Promise.resolve();
+            })
+            .then(() => {
+                if (promoCode) {
+                    setPromoCodes(prev => prev.map(p => p.id === promoCode.id ? { ...p, usageCount: p.usageCount + 1 } : p));
+                }
+                showNotification(`Prospek berhasil dikonversi menjadi klien baru.`);
+                setLeadToConvert(null);
+                setConversionForm(initialConversionFormState);
+            })
+            .catch(error => {
+                console.error('Error converting lead:', error);
+                alert('Gagal mengkonversi prospek. Silakan coba lagi.');
+            });
         
-        showNotification(`Prospek berhasil dikonversi menjadi klien baru.`);
-        setLeadToConvert(null);
-        setConversionForm(initialConversionFormState);
     };
     
     const handleNewLeadFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -410,18 +492,25 @@ const Leads: React.FC<LeadsProps> = ({
     const handleAddLeadSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const newLead: Lead = {
-            id: `LEAD-MANUAL-${Date.now()}`,
             name: newLeadForm.name,
             contactChannel: newLeadForm.contactChannel,
             location: newLeadForm.location,
             status: LeadStatus.DISCUSSION,
             date: new Date().toISOString().split('T')[0],
             notes: newLeadForm.notes,
-        };
-        setLeads(prev => [newLead, ...prev]);
-        setIsAddModalOpen(false);
-        setNewLeadForm(initialNewLeadFormState);
-        showNotification(`Prospek baru "${newLead.name}" berhasil ditambahkan.`);
+        } as any;
+        
+        leadService.create(newLead)
+            .then(createdLead => {
+                setLeads(prev => [createdLead, ...prev]);
+                setIsAddModalOpen(false);
+                setNewLeadForm(initialNewLeadFormState);
+                showNotification(`Prospek baru "${createdLead.name}" berhasil ditambahkan.`);
+            })
+            .catch(error => {
+                console.error('Error creating lead:', error);
+                alert('Gagal menambahkan prospek.');
+            });
     };
 
     const handleCloseLeadDetail = () => {
@@ -431,18 +520,31 @@ const Leads: React.FC<LeadsProps> = ({
     
     const handleUpdateLead = () => {
         if (!selectedLead) return;
-        const updatedLead = { ...selectedLead, notes: editedLeadNotes };
-        setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
-        showNotification("Prospek berhasil diperbarui.");
-        setIsEditingLead(false);
-        setSelectedLead(updatedLead);
+        leadService.update(selectedLead.id, { notes: editedLeadNotes })
+            .then(updatedLead => {
+                setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+                showNotification("Prospek berhasil diperbarui.");
+                setIsEditingLead(false);
+                setSelectedLead(updatedLead);
+            })
+            .catch(error => {
+                console.error('Error updating lead:', error);
+                alert('Gagal memperbarui prospek.');
+            });
     };
     
     const handleDeleteLead = (leadId: string) => {
         if (window.confirm("Yakin ingin menghapus prospek ini secara permanen?")) {
-            setLeads(prev => prev.filter(l => l.id !== leadId));
-            handleCloseLeadDetail();
-            showNotification("Prospek berhasil dihapus.");
+            leadService.delete(leadId)
+                .then(() => {
+                    setLeads(prev => prev.filter(l => l.id !== leadId));
+                    handleCloseLeadDetail();
+                    showNotification("Prospek berhasil dihapus.");
+                })
+                .catch(error => {
+                    console.error('Error deleting lead:', error);
+                    alert('Gagal menghapus prospek.');
+                });
         }
     };
     

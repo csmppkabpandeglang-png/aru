@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { SocialMediaPost, PostStatus, PostType, Project } from '../types';
+import { socialMediaPostService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import StatCard from './StatCard';
@@ -165,12 +166,19 @@ const SocialPlanner: React.FC<SocialPlannerProps> = ({ posts, setPosts, projects
     const handleDrop = (e: React.DragEvent<HTMLDivElement>, newStatus: PostStatus) => {
         e.preventDefault();
         const postId = e.dataTransfer.getData("postId");
-        setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: newStatus } : p));
-        setDraggedPostId(null);
-        setActiveFilter('all'); // Reset filter after dropping
         const post = posts.find(p => p.id === postId);
         if (post) {
-            showNotification(`Post untuk "${post.clientName}" dipindahkan ke "${newStatus}".`);
+            socialMediaPostService.update(postId, { status: newStatus })
+                .then(updatedPost => {
+                    setPosts(prev => prev.map(p => p.id === postId ? updatedPost : p));
+                    setDraggedPostId(null);
+                    setActiveFilter('all');
+                    showNotification(`Post untuk "${post.clientName}" dipindahkan ke "${newStatus}".`);
+                })
+                .catch(error => {
+                    console.error('Error updating post status:', error);
+                    showNotification('Gagal memindahkan post.');
+                });
         }
     };
 
@@ -220,22 +228,41 @@ const SocialPlanner: React.FC<SocialPlannerProps> = ({ posts, setPosts, projects
         };
 
         if (modalMode === 'add') {
-            const newPost = { ...postData, id: `SMP${Date.now()}` };
-            setPosts(prev => [...prev, newPost]);
-            showNotification('Postingan baru berhasil ditambahkan ke draf.');
+            socialMediaPostService.create(postData)
+                .then(newPost => {
+                    setPosts(prev => [...prev, newPost]);
+                    showNotification('Postingan baru berhasil ditambahkan ke draf.');
+                })
+                .catch(error => {
+                    console.error('Error creating post:', error);
+                    showNotification('Gagal menambahkan postingan.');
+                });
         } else if (selectedPost) {
-            const updatedPost = { ...postData, id: selectedPost.id };
-            setPosts(prev => prev.map(p => p.id === selectedPost.id ? updatedPost : p));
-            showNotification('Postingan berhasil diperbarui.');
+            socialMediaPostService.update(selectedPost.id, postData)
+                .then(updatedPost => {
+                    setPosts(prev => prev.map(p => p.id === selectedPost.id ? updatedPost : p));
+                    showNotification('Postingan berhasil diperbarui.');
+                })
+                .catch(error => {
+                    console.error('Error updating post:', error);
+                    showNotification('Gagal memperbarui postingan.');
+                });
         }
         handleCloseModal();
     };
     
     const handleDelete = (postId: string) => {
         if(window.confirm('Yakin ingin menghapus postingan ini?')) {
-            setPosts(prev => prev.filter(p => p.id !== postId));
-            showNotification('Postingan berhasil dihapus.');
-            handleCloseModal();
+            socialMediaPostService.delete(postId)
+                .then(() => {
+                    setPosts(prev => prev.filter(p => p.id !== postId));
+                    showNotification('Postingan berhasil dihapus.');
+                    handleCloseModal();
+                })
+                .catch(error => {
+                    console.error('Error deleting post:', error);
+                    showNotification('Gagal menghapus postingan.');
+                });
         }
     }
     

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Client, Project, Package, AddOn, Transaction, Profile, Card, FinancialPocket, ClientStatus, PaymentStatus, TransactionType, PromoCode, Lead, LeadStatus, ContactChannel, ClientType } from '../types';
+import { clientService, projectService, leadService, transactionService, cardService, financialPocketService, promoCodeService } from '../services/database';
 import Modal from './Modal';
 
 interface PublicBookingFormProps {
@@ -220,57 +221,128 @@ const PublicBookingForm: React.FC<PublicBookingFormProps> = ({
         const selectedAddOns = addOns.filter(addon => formData.selectedAddOnIds.includes(addon.id));
         const remainingPayment = totalProject - dpAmount;
 
-        const newClientId = `CLI${Date.now()}`;
         const newClient: Client = {
-            id: newClientId, name: formData.clientName, email: formData.email, phone: formData.phone, instagram: formData.instagram,
+            name: formData.clientName, email: formData.email, phone: formData.phone, instagram: formData.instagram,
             since: new Date().toISOString().split('T')[0], status: ClientStatus.ACTIVE, 
             clientType: ClientType.DIRECT,
             lastContact: new Date().toISOString(),
             portalAccessId: crypto.randomUUID(),
-        };
+        } as any;
 
-        const newProject: Project = {
-            id: `PRJ${Date.now()}`, projectName: formData.projectName || `Acara ${formData.clientName}`, clientName: newClient.name, clientId: newClient.id,
-            projectType: formData.projectType, packageName: selectedPackage.name, packageId: selectedPackage.id, addOns: selectedAddOns,
-            date: formData.date, location: formData.location, progress: 0, status: 'Dikonfirmasi',
-            totalCost: totalProject, amountPaid: dpAmount,
-            paymentStatus: dpAmount > 0 ? (remainingPayment <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
-            team: [], notes: `Referensi Pembayaran DP: ${formData.dpPaymentRef}`, promoCodeId: promoCodeAppliedId, discountAmount: discountAmount > 0 ? discountAmount : undefined,
-            dpProofUrl: dpProofUrl || undefined,
-        };
-        
-        const newLead: Lead = {
-            id: `LEAD-FORM-${Date.now()}`,
-            name: newClient.name,
-            contactChannel: ContactChannel.WEBSITE,
-            location: newProject.location,
-            status: LeadStatus.CONVERTED,
-            date: new Date().toISOString().split('T')[0],
-            notes: `Dikonversi secara otomatis dari formulir pemesanan publik. Proyek: ${newProject.projectName}. Klien ID: ${newClient.id}`
-        };
-
-        setClients(prev => [newClient, ...prev]);
-        setProjects(prev => [newProject, ...prev]);
-        setLeads(prev => [newLead, ...prev]);
-
-        if (promoCodeAppliedId) {
-            setPromoCodes(prev => prev.map(p => p.id === promoCodeAppliedId ? { ...p, usageCount: p.usageCount + 1 } : p));
-        }
-
-        if (dpAmount > 0) {
-            const newTransaction: Transaction = {
-                id: `TRN-DP-${newProject.id}`, date: new Date().toISOString().split('T')[0], description: `DP Proyek ${newProject.projectName}`,
-                amount: dpAmount, type: TransactionType.INCOME, projectId: newProject.id, category: 'DP Proyek',
-                method: 'Transfer Bank', pocketId: 'POC005', cardId: destinationCard.id,
-            };
-            setTransactions(prev => [...prev, newTransaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setCards(prev => prev.map(c => c.id === destinationCard.id ? { ...c, balance: c.balance + dpAmount } : c));
-            setPockets(prev => prev.map(p => p.id === 'POC005' ? { ...p, amount: p.amount + dpAmount } : p));
-        }
-
-        setIsSubmitting(false);
-        setIsSubmitted(true);
-        showNotification('Pemesanan baru dari klien diterima!');
+        // Create client first
+        clientService.create(newClient)
+            .then(createdClient => {
+                setClients(prev => [createdClient, ...prev]);
+                
+                // Then create project
+                const newProject: Omit<Project, 'id'> = {
+                    projectName: formData.projectName || `Acara ${formData.clientName}`, 
+                    clientName: createdClient.name, 
+                    clientId: createdClient.id,
+                    projectType: formData.projectType, 
+                    packageName: selectedPackage.name, 
+                    packageId: selectedPackage.id, 
+                    addOns: selectedAddOns,
+                    date: formData.date, 
+                    location: formData.location, 
+                    progress: 0, 
+                    status: 'Dikonfirmasi',
+                    totalCost: totalProject, 
+                    amountPaid: dpAmount,
+                    paymentStatus: dpAmount > 0 ? (remainingPayment <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
+                    team: [], 
+                    notes: `Referensi Pembayaran DP: ${formData.dpPaymentRef}`, 
+                    promoCodeId: promoCodeAppliedId, 
+                    discountAmount: discountAmount > 0 ? discountAmount : undefined,
+                    dpProofUrl: dpProofUrl || undefined,
+                };
+                
+                return projectService.create(newProject);
+            })
+            .then(createdProject => {
+                setProjects(prev => [createdProject, ...prev]);
+                
+                // Create lead record
+                const newLead: Omit<Lead, 'id'> = {
+                    name: createdClient.name,
+                    contactChannel: ContactChannel.WEBSITE,
+                    location: createdProject.location,
+                    status: LeadStatus.CONVERTED,
+                    date: new Date().toISOString().split('T')[0],
+                    notes: `Dikonversi secara otomatis dari formulir pemesanan publik. Proyek: ${createdProject.projectName}. Klien ID: ${createdClient.id}`
+                };
+                
+                return leadService.create(newLead);
+            })
+            .then(createdLead => {
+                setLeads(prev => [createdLead, ...prev]);
+                
+                // Handle DP transaction and promo code updates
+                const promises = [];
+                
+                if (dpAmount > 0) {
+                    const newTransaction: Omit<Transaction, 'id'> = {
+                        date: new Date().toISOString().split('T')[0], 
+                        description: `DP Proyek ${createdProject.projectName}`,
+                        amount: dpAmount, 
+                        type: TransactionType.INCOME, 
+                        projectId: createdProject.id, 
+                        category: 'DP Proyek',
+                        method: 'Transfer Bank', 
+                        pocketId: 'POC005', 
+                        cardId: destinationCard.id,
+                    };
+                    
+                    promises.push(
+                        transactionService.create(newTransaction),
+                        cardService.update(destinationCard.id, { 
+                            balance: destinationCard.balance + dpAmount 
+                        }),
+                        financialPocketService.update('POC005', { 
+                            amount: pockets.find(p => p.id === 'POC005')!.amount + dpAmount 
+                        })
+                    );
+                }
+                
+                if (promoCodeAppliedId) {
+                    const promoCode = promoCodes.find(p => p.id === promoCodeAppliedId);
+                    if (promoCode) {
+                        promises.push(promoCodeService.update(promoCodeAppliedId, { 
+                            usageCount: promoCode.usageCount + 1 
+                        }));
+                    }
+                }
+                
+                return Promise.all(promises);
+            })
+            .then(results => {
+                // Update local state for transaction and card updates
+                if (dpAmount > 0) {
+                    const [transaction, updatedCard, updatedPocket] = results;
+                    if (transaction) {
+                        setTransactions(prev => [...prev, transaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+                    }
+                    if (updatedCard) {
+                        setCards(prev => prev.map(c => c.id === destinationCard.id ? updatedCard : c));
+                    }
+                    if (updatedPocket) {
+                        setPockets(prev => prev.map(p => p.id === 'POC005' ? updatedPocket : p));
+                    }
+                }
+                
+                if (promoCodeAppliedId) {
+                    setPromoCodes(prev => prev.map(p => p.id === promoCodeAppliedId ? { ...p, usageCount: p.usageCount + 1 } : p));
+                }
+                
+                setIsSubmitting(false);
+                setIsSubmitted(true);
+                showNotification('Pemesanan baru dari klien diterima!');
+            })
+            .catch(error => {
+                console.error('Error submitting booking:', error);
+                setIsSubmitting(false);
+                alert('Gagal mengirim formulir pemesanan. Silakan coba lagi.');
+            });
     };
     
     const renderSampleContract = () => {

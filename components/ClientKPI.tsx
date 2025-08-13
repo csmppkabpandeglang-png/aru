@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Client, Lead, Project, ClientStatus, ContactChannel, ClientFeedback, SatisfactionLevel } from '../types';
+import { clientFeedbackService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import StatCard from './StatCard';
@@ -162,17 +163,24 @@ const ClientReports: React.FC<ClientReportsProps> = ({ clients, leads, projects,
     const handleManualFeedbackSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const newFeedback: ClientFeedback = {
-            id: `FB-MANUAL-${Date.now()}`,
-            date: new Date().toISOString(),
             clientName: manualFeedbackForm.clientName,
             rating: manualFeedbackForm.rating,
             satisfaction: getSatisfactionFromRating(manualFeedbackForm.rating),
-            feedback: manualFeedbackForm.feedback
-        };
-        setFeedback(prev => [newFeedback, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-        setIsFeedbackModalOpen(false);
-        setManualFeedbackForm(emptyFeedbackForm);
-        showNotification('Masukan berhasil ditambahkan.');
+            feedback: manualFeedbackForm.feedback,
+            date: new Date().toISOString().split('T')[0]
+        } as any;
+        
+        clientFeedbackService.create(newFeedback)
+            .then(createdFeedback => {
+                setFeedback(prev => [createdFeedback, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+                setIsFeedbackModalOpen(false);
+                setManualFeedbackForm(emptyFeedbackForm);
+                showNotification('Masukan berhasil ditambahkan.');
+            })
+            .catch(error => {
+                console.error('Error creating feedback:', error);
+                showNotification('Gagal menambahkan masukan.');
+            });
     };
 
     const activeClientsList = useMemo(() => clients.filter(c => c.status === ClientStatus.ACTIVE), [clients]);

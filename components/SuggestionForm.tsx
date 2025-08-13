@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Lead, LeadStatus, ContactChannel } from '../types';
+import { leadService } from '../services/database';
 
 interface SuggestionFormProps {
     setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
@@ -19,21 +20,25 @@ const SuggestionForm: React.FC<SuggestionFormProps> = ({ setLeads }) => {
         setIsSubmitting(true);
 
         const newLead: Lead = {
-            id: `LEAD-SUG-${Date.now()}`,
             name: name,
             contactChannel: ContactChannel.SUGGESTION_FORM,
             location: 'Form Online',
             status: LeadStatus.DISCUSSION,
             date: new Date().toISOString().split('T')[0],
             notes: `Kontak: ${contact}\n\nPesan:\n${message}`
-        };
+        } as any;
 
-        // Simulate API call to save the lead
-        setTimeout(() => {
-            setLeads(prev => [newLead, ...prev]);
-            setIsSubmitting(false);
-            setIsSubmitted(true);
-        }, 1000);
+        leadService.create(newLead)
+            .then(createdLead => {
+                setLeads(prev => [createdLead, ...prev]);
+                setIsSubmitting(false);
+                setIsSubmitted(true);
+            })
+            .catch(error => {
+                console.error('Error creating suggestion lead:', error);
+                setIsSubmitting(false);
+                alert('Gagal mengirim masukan. Silakan coba lagi.');
+            });
     };
     
     const Logo = () => (

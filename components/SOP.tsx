@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import * as types from '../types';
+import { sopService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import { PlusIcon, PencilIcon, Trash2Icon, BookOpenIcon, ArrowDownIcon, ArrowUpIcon } from '../constants';
@@ -51,28 +52,53 @@ const SOPManagement: React.FC<SOPProps> = ({ sops, setSops, profile, showNotific
         e.preventDefault();
         if (modalMode === 'add') {
             const newSop: types.SOP = {
-                id: `SOP${Date.now()}`,
-                ...formData,
+                title: formData.title,
+                category: formData.category,
+                content: formData.content,
                 lastUpdated: new Date().toISOString(),
-            };
-            setSops(prev => [...prev, newSop].sort((a,b) => a.title.localeCompare(b.title)));
-            showNotification('SOP baru berhasil ditambahkan.');
+            } as any;
+            
+            sopService.create(newSop)
+                .then(createdSop => {
+                    setSops(prev => [...prev, createdSop].sort((a,b) => a.title.localeCompare(b.title)));
+                    showNotification('SOP baru berhasil ditambahkan.');
+                })
+                .catch(error => {
+                    console.error('Error creating SOP:', error);
+                    showNotification('Gagal menambahkan SOP.');
+                });
         } else if (selectedSop) {
             const updatedSop = {
-                ...selectedSop,
-                ...formData,
+                title: formData.title,
+                category: formData.category,
+                content: formData.content,
                 lastUpdated: new Date().toISOString(),
             };
-            setSops(prev => prev.map(s => s.id === selectedSop.id ? updatedSop : s));
-            showNotification('SOP berhasil diperbarui.');
+            
+            sopService.update(selectedSop.id, updatedSop)
+                .then(updated => {
+                    setSops(prev => prev.map(s => s.id === selectedSop.id ? updated : s));
+                    showNotification('SOP berhasil diperbarui.');
+                })
+                .catch(error => {
+                    console.error('Error updating SOP:', error);
+                    showNotification('Gagal memperbarui SOP.');
+                });
         }
         handleCloseModal();
     };
     
     const handleDelete = (sopId: string) => {
         if (window.confirm("Yakin ingin menghapus SOP ini?")) {
-            setSops(prev => prev.filter(s => s.id !== sopId));
-            showNotification('SOP berhasil dihapus.');
+            sopService.delete(sopId)
+                .then(() => {
+                    setSops(prev => prev.filter(s => s.id !== sopId));
+                    showNotification('SOP berhasil dihapus.');
+                })
+                .catch(error => {
+                    console.error('Error deleting SOP:', error);
+                    showNotification('Gagal menghapus SOP.');
+                });
         }
     };
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Profile, Transaction, Project, User, ViewType, ProjectStatusConfig, SubStatusConfig } from '../types';
+import { profileService, userService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import { PencilIcon, PlusIcon, Trash2Icon, KeyIcon, UsersIcon, ListIcon, FolderKanbanIcon } from '../constants';
@@ -293,8 +294,15 @@ const Settings: React.FC<SettingsProps> = ({ profile, setProfile, transactions, 
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 2000);
+        profileService.createOrUpdate(profile)
+            .then(() => {
+                setShowSuccess(true);
+                setTimeout(() => setShowSuccess(false), 2000);
+            })
+            .catch(error => {
+                console.error('Error saving profile:', error);
+                alert('Gagal menyimpan profil.');
+            });
     }
     
     // --- User Management Handlers ---
@@ -360,32 +368,81 @@ const Settings: React.FC<SettingsProps> = ({ profile, setProfile, transactions, 
                 return;
             }
             const newUser: User = {
-                id: `USR${Date.now()}`,
                 fullName: userForm.fullName,
                 email: userForm.email,
                 password: userForm.password,
                 role: userForm.role,
                 permissions: userForm.role === 'Member' ? userForm.permissions : undefined,
-            };
-            setUsers(prev => [...prev, newUser]);
+            } as any;
+            
+            userService.create(newUser)
+                .then(createdUser => {
+                    setUsers(prev => [...prev, createdUser]);
+                })
+                .catch(error => {
+                    console.error('Error creating user:', error);
+                    setUserFormError('Gagal membuat pengguna.');
+                    return;
+                });
         } else if (userModalMode === 'edit' && selectedUser) {
             if (users.some(u => u.email === userForm.email && u.id !== selectedUser.id)) {
                 setUserFormError('Email sudah digunakan oleh pengguna lain.');
                 return;
             }
-            setUsers(prev => prev.map(u => {
-                if (u.id === selectedUser.id) {
-                    const updatedUser: User = {
-                        ...u,
-                        fullName: userForm.fullName,
-                        email: userForm.email,
-                        role: userForm.role,
-                        permissions: userForm.role === 'Member' ? userForm.permissions : undefined,
-                    };
-                    if (userForm.password) {
-                        updatedUser.password = userForm.password;
-                    }
-                    return updatedUser;
+            
+            const updateData: Partial<User> = {
+                fullName: userForm.fullName,
+                email: userForm.email,
+                role: userForm.role,
+                permissions: userForm.role === 'Member' ? userForm.permissions : undefined,
+            };
+            if (userForm.password) {
+                updateData.password = userForm.password;
+            }
+            
+            userService.update(selectedUser.id, updateData)
+                .then(updatedUser => {
+                    setUsers(prev => prev.map(u => u.id === selectedUser.id ? updatedUser : u));
+                })
+                .catch(error => {
+                    console.error('Error updating user:', error);
+                    setUserFormError('Gagal memperbarui pengguna.');
+                    return;
+                });
+        }
+        handleCloseUserModal();
+    };
+
+    const handleDeleteUser = (userId: string) => {
+        if (userId === currentUser?.id) {
+            alert("Anda tidak dapat menghapus akun Anda sendiri.");
+            return;
+        }
+        if (window.confirm("Apakah Anda yakin ingin menghapus pengguna ini?")) {
+            userService.delete(userId)
+                .then(() => {
+                    setUsers(prev => prev.filter(u => u.id !== userId));
+                })
+                .catch(error => {
+                    console.error('Error deleting user:', error);
+                    alert('Gagal menghapus pengguna.');
+                });
+        }
+    };
+    
+    // Update profile when categories change
+    const updateProfileInDatabase = (updatedProfile: Profile) => {
+        profileService.createOrUpdate(updatedProfile)
+            .catch(error => {
+                console.error('Error updating profile:', error);
+            });
+    };
+    
+    // --- Category Management Handlers ---
+    const handleAddOrUpdateIncomeCategory = () => {
+        if (!incomeCategoryInput.trim()) return;
+        const newCategory = incomeCategoryInput.trim();
+        const categories = profile.incomeCategories || [];
                 }
                 return u;
             }));

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ClientFeedback, SatisfactionLevel } from '../types';
+import { clientFeedbackService } from '../services/database';
 import { StarIcon } from '../constants';
 
 interface PublicFeedbackFormProps {
@@ -42,19 +43,24 @@ const PublicFeedbackForm: React.FC<PublicFeedbackFormProps> = ({ setClientFeedba
         setIsSubmitting(true);
 
         const newFeedback: ClientFeedback = {
-            id: `FB-PUB-${Date.now()}`,
             clientName: formState.clientName,
             rating: formState.rating,
             satisfaction: getSatisfactionFromRating(formState.rating),
             feedback: formState.feedback,
             date: new Date().toISOString(),
-        };
+        } as any;
 
-        setTimeout(() => {
-            setClientFeedback(prev => [newFeedback, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setIsSubmitting(false);
-            setIsSubmitted(true);
-        }, 1000);
+        clientFeedbackService.create(newFeedback)
+            .then(createdFeedback => {
+                setClientFeedback(prev => [createdFeedback, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+                setIsSubmitting(false);
+                setIsSubmitted(true);
+            })
+            .catch(error => {
+                console.error('Error submitting feedback:', error);
+                setIsSubmitting(false);
+                alert('Gagal mengirim masukan. Silakan coba lagi.');
+            });
     };
 
     if (isSubmitted) {

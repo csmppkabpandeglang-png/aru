@@ -280,10 +280,17 @@ const App: React.FC = () => {
 
   const handleMarkAsRead = (notificationId: string) => {
     setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
+    // Update in database
+    notificationService.update(notificationId, { isRead: true }).catch(console.error);
   };
   
   const handleMarkAllAsRead = () => {
+    const unreadNotifications = notifications.filter(n => !n.isRead);
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    // Update all unread notifications in database
+    unreadNotifications.forEach(notification => {
+      notificationService.update(notification.id, { isRead: true }).catch(console.error);
+    });
   };
 
   const handleNavigation = (view: ViewType, action?: NavigationAction, notificationId?: string) => {
@@ -312,7 +319,10 @@ const App: React.FC = () => {
                     }
                     return r;
                 });
-                return { ...p, revisions: updatedRevisions };
+                const updatedProject = { ...p, revisions: updatedRevisions };
+                // Update in database
+                projectService.update(projectId, { revisions: updatedRevisions }).catch(console.error);
+                return updatedProject;
             }
             return p;
         });
@@ -328,6 +338,14 @@ const App: React.FC = () => {
                     if (stage === 'editing') updatedProject.isEditingConfirmedByClient = true;
                     if (stage === 'printing') updatedProject.isPrintingConfirmedByClient = true;
                     if (stage === 'delivery') updatedProject.isDeliveryConfirmedByClient = true;
+                    
+                    // Update in database
+                    const updateData: any = {};
+                    if (stage === 'editing') updateData.isEditingConfirmedByClient = true;
+                    if (stage === 'printing') updateData.isPrintingConfirmedByClient = true;
+                    if (stage === 'delivery') updateData.isDeliveryConfirmedByClient = true;
+                    projectService.update(projectId, updateData).catch(console.error);
+                    
                     return updatedProject;
                 }
                 return p;
@@ -344,6 +362,13 @@ const App: React.FC = () => {
                     const confirmed = [...(p.confirmedSubStatuses || []), subStatusName];
                     const notes = { ...(p.clientSubStatusNotes || {}), [subStatusName]: note };
                     project = { ...p, confirmedSubStatuses: confirmed, clientSubStatusNotes: notes };
+                    
+                    // Update in database
+                    projectService.update(projectId, {
+                        confirmedSubStatuses: confirmed,
+                        clientSubStatusNotes: notes
+                    }).catch(console.error);
+                    
                     return project;
                 }
                 return p;
@@ -365,6 +390,8 @@ const App: React.FC = () => {
                 }
             };
             setNotifications(prev => [newNotification, ...prev]);
+            // Save notification to database
+            notificationService.create(newNotification).catch(console.error);
         }
     
         showNotification(`Konfirmasi untuk "${subStatusName}" telah diterima.`);
@@ -374,10 +401,18 @@ const App: React.FC = () => {
         setContracts(prevContracts => {
             return prevContracts.map(c => {
                 if (c.id === contractId) {
-                    return {
+                    const updatedContract = {
                         ...c,
                         ...(signer === 'vendor' ? { vendorSignature: signatureDataUrl } : { clientSignature: signatureDataUrl })
                     };
+                    
+                    // Update in database
+                    const updateData = signer === 'vendor' 
+                        ? { vendorSignature: signatureDataUrl }
+                        : { clientSignature: signatureDataUrl };
+                    contractService.update(contractId, updateData).catch(console.error);
+                    
+                    return updatedContract;
                 }
                 return c;
             });
@@ -386,12 +421,28 @@ const App: React.FC = () => {
     };
     
     const handleSignInvoice = (projectId: string, signatureDataUrl: string) => {
-        setProjects(prev => prev.map(p => p.id === projectId ? { ...p, invoiceSignature: signatureDataUrl } : p));
+        setProjects(prev => prev.map(p => {
+            if (p.id === projectId) {
+                const updatedProject = { ...p, invoiceSignature: signatureDataUrl };
+                // Update in database
+                projectService.update(projectId, { invoiceSignature: signatureDataUrl }).catch(console.error);
+                return updatedProject;
+            }
+            return p;
+        }));
         showNotification('Invoice berhasil ditandatangani.');
     };
     
     const handleSignTransaction = (transactionId: string, signatureDataUrl: string) => {
-        setTransactions(prev => prev.map(t => t.id === transactionId ? { ...t, vendorSignature: signatureDataUrl } : t));
+        setTransactions(prev => prev.map(t => {
+            if (t.id === transactionId) {
+                const updatedTransaction = { ...t, vendorSignature: signatureDataUrl };
+                // Update in database
+                transactionService.update(transactionId, { vendorSignature: signatureDataUrl }).catch(console.error);
+                return updatedTransaction;
+            }
+            return t;
+        }));
         showNotification('Kuitansi berhasil ditandatangani.');
     };
     

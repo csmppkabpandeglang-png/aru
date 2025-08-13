@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Lead, LeadStatus, ContactChannel, Profile } from '../types';
+import { leadService } from '../services/database';
 
 interface PublicLeadFormProps {
     setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
@@ -34,21 +35,25 @@ const PublicLeadForm: React.FC<PublicLeadFormProps> = ({ setLeads, userProfile }
         const notes = `Jenis Acara: ${formState.eventType}\nTanggal Acara: ${new Date(formState.eventDate).toLocaleDateString('id-ID')}\nLokasi Acara: ${formState.eventLocation}`;
 
         const newLead: Lead = {
-            id: `LEAD-FORM-${Date.now()}`,
             name: formState.name,
             contactChannel: ContactChannel.WEBSITE, // Since it's from a web form
             location: formState.eventLocation,
             status: LeadStatus.DISCUSSION, // Automatically placed in "Sedang Diskusi"
             date: new Date().toISOString().split('T')[0],
             notes: notes
-        };
+        } as any;
         
-        // Simulate API call
-        setTimeout(() => {
-            setLeads(prev => [newLead, ...prev]);
-            setIsSubmitting(false);
-            setIsSubmitted(true);
-        }, 1000);
+        leadService.create(newLead)
+            .then(createdLead => {
+                setLeads(prev => [createdLead, ...prev]);
+                setIsSubmitting(false);
+                setIsSubmitted(true);
+            })
+            .catch(error => {
+                console.error('Error creating lead:', error);
+                setIsSubmitting(false);
+                alert('Gagal mengirim informasi. Silakan coba lagi.');
+            });
     };
 
     if (isSubmitted) {

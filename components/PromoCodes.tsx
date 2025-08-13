@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { PromoCode, Project } from '../types';
+import { promoCodeService } from '../services/database';
 import PageHeader from './PageHeader';
 import Modal from './Modal';
 import { PlusIcon, PencilIcon, Trash2Icon } from '../constants';
@@ -70,7 +71,6 @@ const PromoCodes: React.FC<PromoCodesProps> = ({ promoCodes, setPromoCodes, proj
 
         if (modalMode === 'add') {
             const newCode: PromoCode = {
-                id: `PROMO${Date.now()}`,
                 code: formData.code.toUpperCase(),
                 discountType: formData.discountType,
                 discountValue: Number(formData.discountValue),
@@ -79,12 +79,19 @@ const PromoCodes: React.FC<PromoCodesProps> = ({ promoCodes, setPromoCodes, proj
                 maxUsage: formData.maxUsage ? Number(formData.maxUsage) : null,
                 expiryDate: formData.expiryDate || null,
                 createdAt: new Date().toISOString(),
-            };
-            setPromoCodes(prev => [...prev, newCode]);
-            showNotification(`Kode promo "${newCode.code}" berhasil dibuat.`);
+            } as any;
+            
+            promoCodeService.create(newCode)
+                .then(createdCode => {
+                    setPromoCodes(prev => [...prev, createdCode]);
+                    showNotification(`Kode promo "${createdCode.code}" berhasil dibuat.`);
+                })
+                .catch(error => {
+                    console.error('Error creating promo code:', error);
+                    showNotification('Gagal membuat kode promo.');
+                });
         } else if (selectedCode) {
             const updatedCode = {
-                ...selectedCode,
                 code: formData.code.toUpperCase(),
                 discountType: formData.discountType,
                 discountValue: Number(formData.discountValue),
@@ -92,8 +99,16 @@ const PromoCodes: React.FC<PromoCodesProps> = ({ promoCodes, setPromoCodes, proj
                 maxUsage: formData.maxUsage ? Number(formData.maxUsage) : null,
                 expiryDate: formData.expiryDate || null,
             };
-            setPromoCodes(prev => prev.map(c => c.id === selectedCode.id ? updatedCode : c));
-            showNotification(`Kode promo "${updatedCode.code}" berhasil diperbarui.`);
+            
+            promoCodeService.update(selectedCode.id, updatedCode)
+                .then(updated => {
+                    setPromoCodes(prev => prev.map(c => c.id === selectedCode.id ? updated : c));
+                    showNotification(`Kode promo "${updated.code}" berhasil diperbarui.`);
+                })
+                .catch(error => {
+                    console.error('Error updating promo code:', error);
+                    showNotification('Gagal memperbarui kode promo.');
+                });
         }
         handleCloseModal();
     };
@@ -105,8 +120,15 @@ const PromoCodes: React.FC<PromoCodesProps> = ({ promoCodes, setPromoCodes, proj
             return;
         }
         if (window.confirm("Apakah Anda yakin ingin menghapus kode promo ini?")) {
-            setPromoCodes(prev => prev.filter(c => c.id !== codeId));
-            showNotification('Kode promo berhasil dihapus.');
+            promoCodeService.delete(codeId)
+                .then(() => {
+                    setPromoCodes(prev => prev.filter(c => c.id !== codeId));
+                    showNotification('Kode promo berhasil dihapus.');
+                })
+                .catch(error => {
+                    console.error('Error deleting promo code:', error);
+                    showNotification('Gagal menghapus kode promo.');
+                });
         }
     };
 
